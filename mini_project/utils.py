@@ -3,6 +3,7 @@ from torchvision import models, transforms
 from PIL import Image
 import pandas as pd
 import os
+import gdown
 
 # Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,12 +22,21 @@ transform = transforms.Compose([
                          [0.229, 0.224, 0.225])
 ])
 
-# Load model
+# Load model from Google Drive
 def load_model():
     model = models.resnet50(weights=None)
     num_ftrs = model.fc.in_features
     model.fc = torch.nn.Linear(num_ftrs, len(class_names))
-    model_path = os.path.join("model", "best_resnet50_skin_model.pth")
+
+    # Google Drive file ID
+    file_id = '1FcdyGhWhvhG9L-2BtjTOB6JUWJwqhfWj'
+    model_path = 'best_resnet50_skin_model.pth'
+
+    # Check if model file exists, if not, download it
+    if not os.path.exists(model_path):
+        gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+
+    # Load the model weights
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
