@@ -52,7 +52,7 @@ def predict_skin_type(image, model):
 
 # Load products
 def load_products():
-    product_df = pd.read_excel("C:/Users/DELL/Documents/8th semester/mini_project/data/skincare_product_data (2).xlsx")
+    product_df = pd.read_excel("skincare_product_data (2).xlsx")
     return product_df
 
 # Get recommendations — category-wise
