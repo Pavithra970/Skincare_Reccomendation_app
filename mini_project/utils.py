@@ -1,63 +1,70 @@
-import pandas as pd
-import streamlit as st
+import torch
+from torchvision import models, transforms
 from PIL import Image
-from utils import load_model, predict_skin_type, load_products, get_recommendations
+import pandas as pd
+import os
+import gdown
 
-# ===== Streamlit App Config =====
-st.set_page_config(
-    page_title="SmartSkin: Skincare Recommender",
-    layout="centered"
-)
+# Device configuration
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ===== App Title & Description =====
-st.title("💡 SmartSkin: Personalized Skincare Recommender")
-st.write("Upload a clear image of your face. SmartSkin will predict your skin type and suggest tailored skincare products!")
+# Skin type labels
+class_names = ['Dry', 'Normal', 'Oily']
 
-# ===== Load Model & Product Data =====
-with st.spinner("Loading model & product database..."):
-    try:
-        model = load_model()  # Downloads if not present
-        products_df = load_products()
-    except Exception as e:
-        st.error(f"Error loading resources: {e}")
-        st.stop()
+# Valid product categories
+valid_categories = ["CLEANSERS", "FACE_OIL", "SERUM", "MOISTURIZERS", "UNDER_EYE_CREAM", "SUNSCREEN"]
 
-# ===== Image Upload Section =====
-uploaded_file = st.file_uploader("📸 Upload your face image", type=["jpg", "jpeg", "png"])
+# Image transformation for prediction
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
 
-if uploaded_file:
-    try:
-        image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="✅ Uploaded Image", use_column_width=True)
+# Load model from Google Drive
+def load_model():
+    model = models.resnet50(weights=None)
+    num_ftrs = model.fc.in_features
+    model.fc = torch.nn.Linear(num_ftrs, len(class_names))
 
-        with st.spinner("Analyzing skin type..."):
-            skin_type = predict_skin_type(image, model)
+    # Google Drive file ID
+    file_id = '1FcdyGhWhvhG9L-2BtjTOB6JUWJwqhfWj'
+    model_path = 'best_resnet50_skin_model.pth'
 
-        st.success(f"🎯 Detected Skin Type: **{skin_type}**")
+    # Check if model file exists, if not, download it
+    if not os.path.exists(model_path):
+        gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
 
-        # ===== Show Product Recommendations =====
-        recommended_dict = get_recommendations(skin_type, products_df)
+    # Load the model weights
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
 
-        st.subheader("🛍️ Recommended Skincare Products by Category:")
+# Predict skin type
+def predict_skin_type(image, model):
+    image = transform(image).unsqueeze(0).to(device)
+    with torch.no_grad():
+        outputs = model(image)
+        _, predicted = torch.max(outputs, 1)
+    return class_names[predicted.item()]
 
-        for category, products in recommended_dict.items():
-            st.markdown(f"## 🧴 {category.title()}")
+# Load products
+def load_products():
+    product_df = pd.read_excel(os.path.join("data", "skincare_product_data (2).xlsx"))
+    return product_df
 
-            if not products.empty:
-                for _, row in products.iterrows():
-                    st.markdown(f"""
-                        ### {row['Product Name']}
-                        💡 {row['Ingredients']}  
-                        💸 **Price:** ₹{row['Price']}  
-                        ⭐ **Star Rating:** {row['Star Rating']}  
-                        🔗 [Buy Here]({row['Product URL']})  
-                    """)
-                    st.markdown("---")
-            else:
-                st.info(f"No suitable products found in {category.title()} for {skin_type} skin.")
+# Get recommendations — category-wise
+def get_recommendations(skin_type, product_df, top_n=5):
+    recommended = {}
 
-    except Exception as e:
-        st.error(f"An error occurred during prediction: {e}")
+    for category in valid_categories:
+        filtered = product_df[
+            (product_df[skin_type] == 1) &
+            (product_df['Category'].str.upper() == category)
+        ]
+        top_products = filtered.sort_values(by='Star Rating', ascending=False).head(top_n)
+        recommended[category] = top_products
 
-# ===== Footer =====
-st.caption("💖 Powered by SmartSkin AI — Personalized skincare, simplified.")
+    return recommended
