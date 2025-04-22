@@ -36,4 +36,4 @@ This app is built using [Streamlit](https://streamlit.io) and can be deployed di
 ```bash
 git clone https://github.com/Pavithra970/Skincare_Reccomendation_app.git
 
-cd smartskin
+cd Skincare_Reccomendation_app
