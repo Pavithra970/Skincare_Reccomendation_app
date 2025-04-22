@@ -15,7 +15,7 @@ st.write("Upload a clear image of your face. SmartSkin will predict your skin ty
 
 # ===== Load Model & Product Data =====
 with st.spinner("Loading model & product database..."):
-    model = load_model()
+    model = load_model()  # This will now download the model from Google Drive if needed
     products_df = load_products()
 
 # ===== Image Upload Section =====
