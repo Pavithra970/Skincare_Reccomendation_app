@@ -1,55 +1,90 @@
-import pandas as pd
-import streamlit as st
+import torch
+from torchvision import models, transforms
 from PIL import Image
-from utils import load_model, predict_skin_type, load_products, get_recommendations
+import pandas as pd
+import os
 
-# ===== Streamlit App Config =====
-st.set_page_config(
-    page_title="SmartSkin: Skincare Recommender",
-    layout="centered"
-)
+# Device configuration
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ===== App Title & Description =====
-st.title("💡 SmartSkin: Personalized Skincare Recommender")
-st.write("Upload a clear image of your face. SmartSkin will predict your skin type and suggest tailored skincare products!")
+# Skin type labels
+class_names = ['Dry', 'Normal', 'Oily']
 
-# ===== Load Model & Product Data =====
-with st.spinner("Loading model & product database..."):
-    model = load_model()  # This will now download the model from Google Drive if needed
-    products_df = load_products()
+# Product categories
+valid_categories = ["CLEANSERS", "FACE_OIL", "SERUM", "MOISTURIZERS", "UNDER_EYE_CREAM", "SUNSCREEN"]
 
-# ===== Image Upload Section =====
-uploaded_file = st.file_uploader("📸 Upload your face image", type=["jpg", "jpeg", "png"])
+# Image transformation for ResNet model
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
 
-if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="✅ Uploaded Image", use_column_width=True)
+# Load the pretrained ResNet50 model
+def load_model():
+    model = models.resnet50(weights=None)
+    num_ftrs = model.fc.in_features
+    model.fc = torch.nn.Linear(num_ftrs, len(class_names))
+    model_path = os.path.join("model", "best_resnet50_skin_model.pth")
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
 
-    with st.spinner("Analyzing skin type..."):
-        skin_type = predict_skin_type(image, model)
+# Predict skin type from uploaded image
+def predict_skin_type(image, model):
+    image = transform(image).unsqueeze(0).to(device)
+    with torch.no_grad():
+        outputs = model(image)
+        _, predicted = torch.max(outputs, 1)
+    return class_names[predicted.item()]
 
-    st.success(f"🎯 Detected Skin Type: **{skin_type}**")
+# Load general skincare products dataset
+def load_products():
+    product_df = pd.read_excel(r"C:/Users/DELL/Documents/2ndmini/data/skincare_product_data (2).xlsx")
+    product_df.columns = product_df.columns.str.strip()
+    return product_df
 
-    # ===== Show Product Recommendations =====
-    recommended_dict = get_recommendations(skin_type, products_df)
+# Load serum products dataset
+def load_serum_data():
+    serum_df = pd.read_excel(r"C:/Users/DELL/Documents/2ndmini/data/serum_skincare_classified.xlsx")
+    serum_df.columns = serum_df.columns.str.strip()
+    return serum_df
 
-    st.subheader("🛍️ Recommended Skincare Products by Category:")
+# Concern mapping (optional enhancement)
+concern_mapping = {
+    "acne": "Acne",
+    "pores": "Open Pores",
+    "pigmentation": "Pigmentation",
+    "dark circles": "Dark Circles",
+    "scars": "Acne Marks & Scars",
+    "aging": "Aging"
+}
 
-    for category, products in recommended_dict.items():
-        st.markdown(f"## 🧴 {category.title()}")
+# Get top N recommended products by skin type and concern
+def get_recommendations(skin_type, concern, product_df, serum_df, top_n=5):
+    recommended = {}
+    concern_col = concern_mapping.get(concern.lower(), concern.title())
 
-        if not products.empty:
-            for _, row in products.iterrows():
-                st.markdown(f"""
-                    ### {row['Product Name']}
-                    💡 {row['Ingredients']}  
-                    💸 **Price:** ₹{row['Price']}  
-                    ⭐ **Star Rating:** {row['Star Rating']}  
-                    🔗 [Buy Here]({row['Product URL']})  
-                """)
-                st.markdown("---")
+    for category in valid_categories:
+        if category == "SERUM":
+            if concern_col in serum_df.columns:
+                filtered = serum_df[
+                    (serum_df[concern_col] == 1) &
+                    (serum_df[skin_type] == 1)
+                ]
+                top_products = filtered.sort_values(by="Star Rating", ascending=False).head(top_n)
+                recommended[category] = top_products
+            else:
+                recommended[category] = pd.DataFrame()  # Empty if concern column not found
         else:
-            st.info(f"No suitable products found in {category.title()} for {skin_type} skin.")
+            filtered = product_df[
+                (product_df[skin_type] == 1) &
+                (product_df['Category'].str.upper() == category)
+            ]
+            top_products = filtered.sort_values(by='Star Rating', ascending=False).head(top_n)
+            recommended[category] = top_products
 
-# ===== Footer =====
-st.caption("💖 Powered by SmartSkin AI — Personalized skincare, simplified.")
+    return recommended
+#streamlit run app.py
