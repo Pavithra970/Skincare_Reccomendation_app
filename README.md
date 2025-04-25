@@ -17,15 +17,7 @@ SmartSkin is a web-based AI-powered system that classifies a user's skin type us
 
 ## 📸 Demo
 
-![SmartSkin Demo](demo.gif)
-
-## 📸 Demo
-
-<p align="center">
-  <img src="demo.gif" width="80%" alt="SmartSkin Web App Demo GIF">
-</p>
-
-> _Upload a face image, select a skin concern, and get personalized skincare recommendations instantly._
+it is attached in demo.gif
 
 
 
